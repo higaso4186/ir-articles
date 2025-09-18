@@ -1,46 +1,53 @@
-from __future__ import annotations
-from typing import List, Dict, Any
+﻿from __future__ import annotations
+from typing import Any, Dict, List
 from pathlib import Path
 from analyzer.base import BaseAnalyzer
 
+
 class Slot1Analyzer(BaseAnalyzer):
     """業績分析スロット"""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         super().__init__(
             name="業績分析",
-            description="売上・利益の推移と要因分析"
+            description="売上・利益の推移と主要ドライバーを分析",
         )
-    
-    def analyze(self, pages: List[Dict], images_dir: Path, ai_client, prompt_loader=None, company_name: str = "不明企業") -> Dict[str, Any]:
+
+    def analyze(
+        self,
+        pages: List[Dict],
+        images_dir: Path,
+        ai_client,
+        prompt_loader=None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        meta = metadata or {}
+        company = meta.get("company_name", "不明企業")
+        industry = meta.get("industry", "業界不明")
+        period = meta.get("period_label") or meta.get("fiscal_year") or "対象期間不明"
+        kpi_summary = meta.get("kpi_summary") or "主要KPI情報が取得できていません"
+
         if prompt_loader:
-            # 専用プロンプトを使用
-            prompt = prompt_loader.create_slot_prompt(1, pages, company_name)
+            prompt = prompt_loader.create_slot_prompt(1, pages, meta)
             analysis_result = ai_client.generate_analysis(prompt)
         else:
-            # フォールバック: プロンプトファイルが読み込めない場合
-            print("警告: プロンプトファイルの読み込みに失敗しました。基本分析を実行します。")
-            context = "決算資料から業績分析を実行してください。売上高、営業利益、純利益の推移と要因を分析し、1,500-2,000字で詳細に記述してください。"
+            context = (
+                f"{company}（業界: {industry}、期間: {period}）の決算資料から、売上・利益の推移と変動要因を特定してください。"
+                f"主要KPI: {kpi_summary}。前年同期比や会社計画との差異が分かる場合は数値とともに示してください。"
+            )
             prompt = self.create_prompt(pages, context)
             analysis_result = ai_client.generate_analysis(prompt)
-        
-        # 関連画像を特定（業績関連のキーワード）
+
         relevant_pages = self.find_relevant_images_by_keywords(
-            ["売上", "利益", "収益", "業績", "前年", "増減"], pages
+            ["売上", "利益", "収益", "業績", "前年", "増減"],
+            pages,
+            extra_keywords=meta.get("metric_keywords"),
         )
-        
+
         return {
             "title": self.name,
             "content": analysis_result,
             "relevant_pages": relevant_pages,
-            "images": [f"images/p{p:03d}.png" for p in relevant_pages[:2]]
+            "images": [f"images/p{p:03d}.png" for p in relevant_pages[:2]],
         }
-    
-    def find_relevant_images_by_keywords(self, keywords: List[str], pages: List[Dict]) -> List[int]:
-        """キーワードベースで関連画像を特定"""
-        relevant_pages = []
-        for page in pages:
-            text = page['text'].lower()
-            if any(keyword in text for keyword in keywords):
-                relevant_pages.append(page['page'])
-        return relevant_pages[:5]  # 最大5ページまで
+
