@@ -1,0 +1,34 @@
+---
+title: "{{ result.common.company_name or '不明企業' }} 決算レビュー {{ result.common.period_label or '' }}"
+tags: ["決算分析","{{ result.common.accounting_standard or 'NA' }}","{{ result.common.currency or 'NA' }}"]
+source_pdf: "{{ result.meta.filename }}"
+doc_id: "{{ result.meta.doc_id }}"
+pages: {{ result.meta.pages }}
+---
+
+# サマリ
+- 会社名: {{ result.common.company_name or 'N/A' }}
+- 決算期: {{ result.common.period_label or 'N/A' }}
+- 会計基準: {{ result.common.accounting_standard or 'N/A' }}
+- 通貨/単位: {{ (result.common.currency or 'N/A') ~ '/' ~ (result.common.unit or 'N/A') }}
+
+- 売上: {{ result.common.kpis.get('revenue').value if result.common.kpis.get('revenue') else None | format_currency(result.common.currency) }}
+- 営業利益: {{ result.common.kpis.get('operating_income').value if result.common.kpis.get('operating_income') else None | format_currency(result.common.currency) }}
+- EBITDA: {{ result.common.kpis.get('ebitda').value if result.common.kpis.get('ebitda') else None | format_currency(result.common.currency) }}
+
+---
+
+{% for a in result.analyses %}
+## {{ a.title }}
+{{ a.finding }}
+
+**引用ページ**: {% if a.page_citations %}{{ a.page_citations | join(", ") }}{% else %}N/A{% endif %}
+
+{% for img in a.images %}
+![引用画像]({{ img }})
+{% endfor %}
+
+---
+{% endfor %}
+
+*自動生成: このMarkdownはローカルPythonパイプラインにより生成されました。*
