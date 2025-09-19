@@ -1,8 +1,10 @@
 ﻿from __future__ import annotations
 from pathlib import Path
-import json, time
+import copy
+import json
+import time
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pdf_utils import sha256_file, render_pages_to_images, extract_text_per_page, save_jsonl
 from ai_client import get_ai_client
 from prompt_loader import PromptLoader
@@ -215,6 +217,23 @@ def count_characters(text: str) -> int:
     return sum(1 for ch in text if not ch.isspace())
 
 
+def summarize_usage(usage: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    tokens = {'input': 0, 'cached_input': 0, 'output': 0, 'total': 0}
+    if not usage:
+        return tokens
+    if isinstance(usage, dict):
+        for key, target in (('prompt_tokens', 'input'), ('completion_tokens', 'output'), ('total_tokens', 'total')):
+            value = usage.get(key)
+            if isinstance(value, int):
+                tokens[target] = value
+        details = usage.get('prompt_tokens_details')
+        if isinstance(details, dict):
+            cached = details.get('cached_tokens')
+            if isinstance(cached, int):
+                tokens['cached_input'] = cached
+    return tokens
+
+
 def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "openai") -> dict:
     """高品質な記事生成パイプラインを実行"""
     outdir.mkdir(parents=True, exist_ok=True)
@@ -235,16 +254,28 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
 
     ai_client = get_ai_client(ai_provider)
     prompt_loader = PromptLoader()
+    cost_records: List[Dict[str, Any]] = []
 
     company_name = extract_company_name(pages)
     metadata = build_metadata(common, pages, company_name)
-    (paths.extracted / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    metadata_prompt_versions = metadata.setdefault("prompt_versions", {})
+
+    def record_usage(step: str, prompt_file: Optional[str]) -> Dict[str, Any]:
+        usage_snapshot = ai_client.last_usage if isinstance(ai_client.last_usage, dict) else None
+        tokens = summarize_usage(usage_snapshot)
+        entry: Dict[str, Any] = {"step": step, "model": getattr(ai_client, "model_name", None), "tokens": tokens}
+        if prompt_file:
+            version = prompt_loader.get_prompt_version(prompt_file)
+            entry["prompt_file"] = prompt_file
+            entry["prompt_version"] = version
+            metadata_prompt_versions[step] = version
+        cost_records.append(entry)
+        return entry
 
     print("概要セクションを生成中...")
     overview_prompt = prompt_loader.create_overview_prompt(pages, metadata)
     overview_content = ai_client.generate_article(overview_prompt)
+    record_usage("overview", "概要生成.md")
 
     analyzers = [
         Slot1Analyzer(),
@@ -256,22 +287,27 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
 
     slot_results: List[Dict[str, Any]] = []
     for i, analyzer in enumerate(analyzers, 1):
-        print(f"スロット{i} ({analyzer.name}) を分析中...")
+        slot_file = prompt_loader.get_slot_filename(i)
+        print(f"Analyzing slot {i} ({analyzer.name})...")
         try:
             result = analyzer.analyze(pages, paths.images, ai_client, prompt_loader, metadata)
-            slot_results.append(result)
         except Exception as exc:  # noqa: BLE001
-            print(f"スロット{i}でエラー: {exc}")
-            slot_results.append({
+            print(f"Slot {i} raised an error: {exc}")
+            result = {
                 "title": analyzer.name,
-                "content": f"分析エラー: {exc}",
+                "content": f"���̓G���[: {exc}",
                 "relevant_pages": [],
                 "images": [],
-            })
+            }
+        entry = record_usage(f"slot{i}", slot_file)
+        result["prompt_file"] = slot_file
+        result["prompt_version"] = entry.get("prompt_version")
+        slot_results.append(result)
 
-    print("投資判断セクションを生成中...")
-    investment_prompt_template = prompt_loader.load_prompt("投資判断生成.md")
 
+    print("Generating investment section...")
+    investment_prompt_file = "投資判断生成.md"
+    investment_prompt_template = prompt_loader.load_prompt(investment_prompt_file)
     analysis_summary = ""
     for result in slot_results:
         analysis_summary += f"### {result['title']}\n{result['content']}\n\n"
@@ -297,6 +333,7 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
 {metadata.get('investment_guidance', '')}
 """
     investment_content = ai_client.generate_article(investment_prompt)
+    record_usage("investment", investment_prompt_file)
 
     print("最終記事を整形中...")
     analysis_sections: List[str] = []
@@ -326,6 +363,19 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
     total_word_count = len(final_article.split())
     total_character_count = count_characters(final_article)
 
+    totals = {'input': 0, 'cached_input': 0, 'output': 0, 'total': 0}
+    for record in cost_records:
+        for key in totals:
+            value = record['tokens'].get(key) if isinstance(record.get('tokens'), dict) else None
+            if isinstance(value, int):
+                totals[key] += value
+
+    cost_summary = {
+        'model': getattr(ai_client, 'model_name', None),
+        'calls': cost_records,
+        'totals': totals,
+    }
+
     result = {
         "company_name": company_name,
         "filename": pdf_path.name,
@@ -341,6 +391,7 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
             "slot_results": slot_results,
             "investment_judgment": investment_content,
             "total_images": len(set(all_images)),
+            "token_usage": cost_summary,
         },
     }
 
@@ -353,11 +404,17 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
     (paths.extracted / "investment.json").write_text(
         json.dumps({"content": investment_content}, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    (paths.extracted / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     (paths.extracted / "result.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
     (paths.outputs / "article.md").write_text(final_article, encoding="utf-8")
+    (paths.outputs / "cost.json").write_text(
+        json.dumps(cost_summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     runlog = {
         "ts": int(time.time()),
@@ -370,6 +427,7 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
         "industry": metadata.get("industry"),
         "images_used": len(set(all_images)),
         "slots_processed": len(slot_results),
+        "tokens": totals,
     }
     (paths.logs / "run.json").write_text(json.dumps(runlog, indent=2, ensure_ascii=False), encoding="utf-8")
 

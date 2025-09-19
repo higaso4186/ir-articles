@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Optional
+import hashlib
 
 
 class PromptLoader:
@@ -8,12 +9,28 @@ class PromptLoader:
 
     def __init__(self, prompt_dir: Path | None = None):
         self.prompt_dir = Path(prompt_dir) if prompt_dir else Path(__file__).parent.parent / "prompt"
+        self._cache: Dict[str, str] = {}
+        self._version_cache: Dict[str, str] = {}
+        self._slot_files = {
+            1: "slot1_業績分析.md",
+            2: "slot2_セグメント分析.md",
+            3: "slot3_財務健全性.md",
+            4: "slot4_戦略展望.md",
+            5: "slot5_リスク分析.md",
+        }
+
+    def _resolve(self, filename: str) -> Path:
+        return self.prompt_dir / filename
 
     def load_prompt(self, filename: str) -> str:
-        prompt_path = self.prompt_dir / filename
+        if filename in self._cache:
+            return self._cache[filename]
+        prompt_path = self._resolve(filename)
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-        return prompt_path.read_text(encoding="utf-8")
+        text = prompt_path.read_text(encoding="utf-8")
+        self._cache[filename] = text
+        return text
 
     def load_article_prompt(self) -> str:
         return self.load_prompt("決算書分析記事作成プロンプト.md")
@@ -22,16 +39,20 @@ class PromptLoader:
         return self.load_prompt("概要生成.md")
 
     def load_slot_prompt(self, slot_number: int) -> str:
-        slot_files = {
-            1: "slot1_業績分析.md",
-            2: "slot2_セグメント分析.md",
-            3: "slot3_財務健全性.md",
-            4: "slot4_戦略展望.md",
-            5: "slot5_リスク分析.md",
-        }
-        if slot_number not in slot_files:
+        return self.load_prompt(self.get_slot_filename(slot_number))
+
+    def get_slot_filename(self, slot_number: int) -> str:
+        if slot_number not in self._slot_files:
             raise ValueError(f"Invalid slot number: {slot_number}")
-        return self.load_prompt(slot_files[slot_number])
+        return self._slot_files[slot_number]
+
+    def get_prompt_version(self, filename: str) -> str:
+        if filename in self._version_cache:
+            return self._version_cache[filename]
+        content = self.load_prompt(filename)
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
+        self._version_cache[filename] = digest
+        return digest
 
     def _build_metadata_section(self, metadata: Dict[str, Any] | None) -> str:
         if not metadata:
