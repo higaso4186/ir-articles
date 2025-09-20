@@ -218,6 +218,60 @@ def count_characters(text: str) -> int:
     return sum(1 for ch in text if not ch.isspace())
 
 
+
+
+
+
+def _remove_incomplete_table_rows(markdown: str) -> str:
+    lines = markdown.splitlines()
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith('|') and i + 1 < len(lines) and re.match(r'^\|[-:\\s|]+\|$', lines[i + 1].strip()):
+            header = lines[i]
+            separator = lines[i + 1]
+            j = i + 2
+            retained = []
+            while j < len(lines) and lines[j].startswith('|'):
+                row = lines[j].strip().strip('|')
+                cells = [cell.strip() for cell in row.split('|')]
+                if any(cell for cell in cells[1:]):
+                    retained.append(lines[j])
+                j += 1
+            if retained:
+                result.append(header)
+                result.append(separator)
+                result.extend(retained)
+            else:
+                while result and result[-1] == '':
+                    result.pop()
+            i = j
+            continue
+        result.append(lines[i])
+        i += 1
+    return '\n'.join(result)
+def _remove_empty_tables(markdown: str) -> str:
+    lines = markdown.splitlines()
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith('|') and i + 1 < len(lines) and re.match(r'^\|[-:\s|]+\|$', lines[i + 1].strip()):
+            table_lines: list[str] = []
+            while i < len(lines) and lines[i].startswith('|'):
+                table_lines.append(lines[i])
+                i += 1
+            body_lines = table_lines[2:]
+            has_numeric = any(re.search(r'\d', row) for row in body_lines)
+            if has_numeric:
+                result.extend(table_lines)
+            else:
+                while result and result[-1] == '':
+                    result.pop()
+            continue
+        result.append(line)
+        i += 1
+    return '\n'.join(result)
 def summarize_usage(usage: Optional[Dict[str, Any]]) -> Dict[str, int]:
     tokens = {'input': 0, 'cached_input': 0, 'output': 0, 'total': 0}
     if not usage:
@@ -366,6 +420,8 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
     page_list_text = ", ".join(f"P{p:02d}" for p in unique_pages) if unique_pages else "ページ参照情報未収集"
     data_notes = "主要数値は決算資料から抽出しています。重要項目は原資料と照合してください。"
 
+    kpi_summary_value = metadata.get("kpi_summary")
+
     replacements = {
         "{{OVERVIEW_SECTION}}": overview_section,
         "{{SLOT1_SECTION}}": slot_sections_map["SLOT1_SECTION"],
@@ -376,13 +432,36 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
         "{{INVESTMENT_SECTION}}": investment_section,
         "{{PDF_FILENAME}}": pdf_path.name,
         "{{PAGE_LIST}}": page_list_text,
-        "{{KPI_SUMMARY}}": metadata.get("kpi_summary") or "主要KPI情報が取得できていません",
+        "{{KPI_SUMMARY}}": kpi_summary_value or "",
         "{{DATA_NOTES}}": data_notes,
     }
 
     final_article = article_template
     for placeholder, value in replacements.items():
         final_article = final_article.replace(placeholder, value.strip())
+
+    if not (kpi_summary_value and kpi_summary_value.strip()):
+        final_article = re.sub(r"\n- 主要KPI抜粋:\s*\n", "\n", final_article)
+        final_article = re.sub(r"^- 主要KPI抜粋:\s*$", "", final_article, flags=re.MULTILINE)
+
+    final_article = _remove_empty_tables(final_article)
+    final_article = _remove_incomplete_table_rows(final_article)
+
+    log_lines = [
+        "# Data Sources and Verification",
+        "",
+        f"- PDF: {pdf_path.name}",
+    ]
+    if unique_pages:
+        log_lines.append(f"- Referenced pages: {page_list_text}")
+    if kpi_summary_value and kpi_summary_value.strip():
+        log_lines.append(f"- KPI summary: {kpi_summary_value.strip()}")
+    if data_notes:
+        log_lines.append(f"- Notes: {data_notes}")
+    log_lines.append("")
+    log_content = "\n".join(log_lines)
+
+    (paths.outputs / "log.md").write_text(log_content, encoding="utf-8")
 
     page_refs = re.findall(r"\(P\d{2,}\)", final_article)
     table_matches = re.findall(r"\n\|[^\n]+\|\n\|[-:| ]+\|", final_article)

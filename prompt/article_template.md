@@ -26,13 +26,6 @@
 
 {{INVESTMENT_SECTION}}
 
-## データソースと検証メモ
-- 参照PDF: {{PDF_FILENAME}}
-- 参照ページ: {{PAGE_LIST}}
-- 主要KPI抜粋: {{KPI_SUMMARY}}
-- 抽出手法: 自動テキスト抽出 + 人手確認
-- 注意事項: {{DATA_NOTES}}
-
 ---
 
 **▼新着記事をTwitterでお届けします。**
