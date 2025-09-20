@@ -187,15 +187,27 @@ class OpenAIClient(BaseAIClient):
 
     def generate_analysis(self, prompt: str) -> str:
         from ai_utils import generate_analysis
-        return generate_analysis(prompt, model=self.model, api_key=self.api_key)
+        result = generate_analysis(prompt, model=self.model, api_key=self.api_key)
+        if isinstance(result, dict) and "usage" in result:
+            self.last_usage = result["usage"]
+            return result["content"]
+        return result
 
     def generate_summary(self, prompt: str) -> str:
         from ai_utils import generate_summary
-        return generate_summary(prompt, model=self.model, api_key=self.api_key)
+        result = generate_summary(prompt, model=self.model, api_key=self.api_key)
+        if isinstance(result, dict) and "usage" in result:
+            self.last_usage = result["usage"]
+            return result["content"]
+        return result
 
     def generate_article(self, prompt: str) -> str:
         from ai_utils import generate_article
-        return generate_article(prompt, model=self.model, api_key=self.api_key)
+        result = generate_article(prompt, model=self.model, api_key=self.api_key)
+        if isinstance(result, dict) and "usage" in result:
+            self.last_usage = result["usage"]
+            return result["content"]
+        return result
 
 
 def get_ai_client(provider: str = "mock") -> BaseAIClient:

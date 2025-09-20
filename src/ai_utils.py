@@ -95,6 +95,11 @@ def call_openai_api(
         print(f"[DEBUG] Response finish_reason: {response.choices[0].finish_reason}")
         print(f"[DEBUG] Response content length: {len(response.choices[0].message.content or '')}")
         
+        # トークン使用量をデバッグ出力
+        usage = response.usage
+        if usage:
+            print(f"[DEBUG] Tokens - Input: {usage.prompt_tokens}, Output: {usage.completion_tokens}, Total: {usage.total_tokens}")
+        
         content = response.choices[0].message.content
         if not content or not content.strip():
             # コンテンツフィルターの確認
@@ -103,11 +108,20 @@ def call_openai_api(
             else:
                 raise ValueError(f"OpenAI returned empty response content (finish_reason: {response.choices[0].finish_reason})")
         
-        return content.strip()
+        # トークン使用量情報を含む辞書を返す
+        return {
+            "content": content.strip(),
+            "usage": {
+                "prompt_tokens": usage.prompt_tokens if usage else 0,
+                "completion_tokens": usage.completion_tokens if usage else 0,
+                "total_tokens": usage.total_tokens if usage else 0
+            }
+        }
         
     except Exception as e:
         error_msg = f"AI API呼び出しエラー: {str(e)}"
         print(f"エラー詳細: {error_msg}")
+        # エラー時は文字列を返す（ai_client.pyで適切に処理される）
         return error_msg
 
 
