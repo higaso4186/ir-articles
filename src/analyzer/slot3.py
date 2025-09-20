@@ -10,7 +10,7 @@ class Slot3Analyzer(BaseAnalyzer):
     def __init__(self) -> None:
         super().__init__(
             name="財務健全性",
-            description="資本構成とキャッシュフローの健全性を検証",
+            description="資本構成・流動性・資本政策を多角的に検証",
         )
 
     def analyze(
@@ -30,8 +30,9 @@ class Slot3Analyzer(BaseAnalyzer):
             analysis_result = ai_client.generate_analysis(prompt)
         else:
             context = (
-                f"{company}（期間: {period}）の財務健全性を、流動性・自己資本比率・キャッシュフロー創出力の観点で分析してください。"
-                "有利子負債の推移、財務レバレッジ、配当・投資方針にも触れ、関連ページと数値を引用してください。"
+                f"{company}（期間: {period}）の財務健全性を、自己資本比率・ネットD/E・流動性指標・ネットデット/EBITDA・インタレストカバレッジ・手元流動性日数まで網羅して分析してください。"
+                "運転資本回転日数のYoY/QoQ比較、営業/投資/財務CFのブリッジ、フリーCFの持続性、借入金満期プロファイルとコベナンツ、配当/自己株/投資方針の整合を定量的に整理してください。"
+                "リスクシナリオ別の耐性とモニタリングすべき指標を提示し、全ての主要指標にページ番号を( Pxx )形式で付記してください。"
             )
             prompt = self.create_prompt(pages, context)
             analysis_result = ai_client.generate_analysis(prompt)
@@ -45,4 +46,5 @@ class Slot3Analyzer(BaseAnalyzer):
             "relevant_pages": relevant_pages,
             "images": [f"images/p{p:03d}.png" for p in relevant_pages[:2]],
         }
+
 

@@ -10,7 +10,7 @@ class Slot2Analyzer(BaseAnalyzer):
     def __init__(self) -> None:
         super().__init__(
             name="セグメント分析",
-            description="事業セグメント別の業績と成長性を評価",
+            description="セグメント別の差異分析と戦略連動を精査",
         )
 
     def analyze(
@@ -31,8 +31,9 @@ class Slot2Analyzer(BaseAnalyzer):
             analysis_result = ai_client.generate_analysis(prompt)
         else:
             context = (
-                f"{company}の主要セグメント（{segment_detail}）について、売上・利益の推移、成長率、利益率、顧客動向を比較分析してください。"
-                "セグメント間シナジーやコスト配賦の影響も考慮し、数値を引用しながら記述してください。"
+                f"{company}の主要セグメント（{segment_detail}）について、売上高・営業利益・利益率・構成比のYoY/QoQ/計画差異を差額と比率で比較し、主因を定量的に整理してください。"
+                "顧客KPIやチャネル/地域別の動向を示し、共通費配賦やシナジー/カニバリの影響をページ番号付きで解説してください。"
+                "戦略KPIやマイルストンとの連動度を明示し、成長セグメントと停滞セグメントそれぞれの打ち手とリスク/機会を整理してください。"
             )
             prompt = self.create_prompt(pages, context)
             analysis_result = ai_client.generate_analysis(prompt)
@@ -50,4 +51,5 @@ class Slot2Analyzer(BaseAnalyzer):
             "relevant_pages": relevant_pages,
             "images": [f"images/p{p:03d}.png" for p in relevant_pages[:2]],
         }
+
 

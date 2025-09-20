@@ -10,7 +10,7 @@ class Slot4Analyzer(BaseAnalyzer):
     def __init__(self) -> None:
         super().__init__(
             name="戦略・展望",
-            description="経営戦略と成長シナリオを評価",
+            description="戦略KPIと資本配分・競争優位を多面的に評価",
         )
 
     def analyze(
@@ -32,8 +32,9 @@ class Slot4Analyzer(BaseAnalyzer):
             analysis_result = ai_client.generate_analysis(prompt)
         else:
             context = (
-                f"{company}（業界: {industry}）の経営戦略と中期計画を整理し、競争優位性と実現可能性を評価してください。"
-                f"主要セグメント: {segment_text}。投資計画、技術開発、サステナビリティ施策などのアクションと成果指標を紐付けて分析してください。"
+                f"{company}（業界: {industry}）の中期戦略と重点施策を、戦略テーマ×KGI/KPI、達成タイムライン、進捗度で整理してください。"
+                f"主要セグメント: {segment_text}。Capex/M&A/R&D/人材投資の規模と回収指標、ESG施策、マイルストン、カタリストをページ番号付きで解説してください。"
+                "市場シェア・競合比較・シナリオ別アウトルックを定量化し、成功/失敗の分岐要因とモニタリング指標を提示してください。"
             )
             prompt = self.create_prompt(pages, context)
             analysis_result = ai_client.generate_analysis(prompt)
@@ -51,4 +52,5 @@ class Slot4Analyzer(BaseAnalyzer):
             "relevant_pages": relevant_pages,
             "images": [f"images/p{p:03d}.png" for p in relevant_pages[:2]],
         }
+
 

@@ -148,12 +148,21 @@ class OpenAIClient(BaseAIClient):
         delay = 1.0
         while True:
             try:
-                response = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
+                # GPT-5ではtemperatureパラメータを制限、その他は通常通り
+                if self.model.startswith("gpt-5"):
+                    response = self._client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_completion_tokens=max_tokens,
+                        # temperatureパラメータを省略（GPT-5ではデフォルト値1のみサポート）
+                    )
+                else:
+                    response = self._client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_completion_tokens=max_tokens,
+                        temperature=temperature,
+                    )
                 content = response.choices[0].message.content if response.choices else None
                 if not content or not content.strip():
                     raise ValueError("OpenAI returned empty response content")
@@ -177,25 +186,16 @@ class OpenAIClient(BaseAIClient):
                 raise
 
     def generate_analysis(self, prompt: str) -> str:
-        try:
-            return self._chat_completion(prompt, max_tokens=1200, temperature=0.3)
-        except Exception as exc:
-            self.reset_usage()
-            return f"AI分析エラー: {exc}"
+        from ai_utils import generate_analysis
+        return generate_analysis(prompt, model=self.model, api_key=self.api_key)
 
     def generate_summary(self, prompt: str) -> str:
-        try:
-            return self._chat_completion(prompt, max_tokens=600, temperature=0.3)
-        except Exception as exc:
-            self.reset_usage()
-            return f"AIサマリーエラー: {exc}"
+        from ai_utils import generate_summary
+        return generate_summary(prompt, model=self.model, api_key=self.api_key)
 
     def generate_article(self, prompt: str) -> str:
-        try:
-            return self._chat_completion(prompt, max_tokens=4096, temperature=0.3)
-        except Exception as exc:
-            self.reset_usage()
-            return f"AI記事生成エラー: {exc}"
+        from ai_utils import generate_article
+        return generate_article(prompt, model=self.model, api_key=self.api_key)
 
 
 def get_ai_client(provider: str = "mock") -> BaseAIClient:

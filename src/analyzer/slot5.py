@@ -10,7 +10,7 @@ class Slot5Analyzer(BaseAnalyzer):
     def __init__(self) -> None:
         super().__init__(
             name="リスク・注記",
-            description="事業・財務リスクと開示姿勢を整理",
+            description="リスクスコアとモニタリング計画を体系化",
         )
 
     def analyze(
@@ -30,8 +30,9 @@ class Slot5Analyzer(BaseAnalyzer):
             analysis_result = ai_client.generate_analysis(prompt)
         else:
             context = (
-                f"{company}（業界: {industry}）の主要リスクを、マクロ環境・競争・オペレーション・法規制の観点で整理してください。"
-                "決算書からの引用箇所を示し、影響度・発生可能性・緩和策を明確に記述してください。"
+                f"{company}（業界: {industry}）の主要リスクを、マクロ・競争・オペレーション・法規制/コンプラ・財務の5分類で整理し、発生可能性・影響度・残存リスクをスコアリングしてください。"
+                "各リスクの緩和策と進捗、モニタリング指標・責任部門・頻度、外部環境/規制動向の感応度、BCP・サイバー対策・内部統制との関連をページ番号付きで解説してください。"
+                "トリガーイベントごとの対応フローと投資家が注視すべきチェックポイントを提示してください。"
             )
             prompt = self.create_prompt(pages, context)
             analysis_result = ai_client.generate_analysis(prompt)
@@ -57,4 +58,5 @@ class Slot5Analyzer(BaseAnalyzer):
             "relevant_pages": relevant_pages,
             "images": [f"images/p{p:03d}.png" for p in relevant_pages[:2]],
         }
+
 

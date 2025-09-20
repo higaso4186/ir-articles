@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 from pathlib import Path
+import re
 import copy
 import json
 import time
@@ -336,30 +337,77 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
     record_usage("investment", investment_prompt_file)
 
     print("最終記事を整形中...")
-    analysis_sections: List[str] = []
+    slot_sections_map: Dict[str, str] = {}
     all_images: List[int] = []
 
-    for result in slot_results:
-        analysis_sections.append(f"## {result['title']}\n\n{result['content']}\n")
-        if result["images"]:
-            for img in result["images"]:
-                analysis_sections.append(f"![{result['title']}]({img})\n")
-        all_images.extend(result["relevant_pages"])
+    for idx, result in enumerate(slot_results, 1):
+        section_parts: List[str] = []
+        content = (result.get("content") or "").strip()
+        if content:
+            section_parts.append(content)
+        image_block = ""
+        images = result.get("images") or []
+        if images:
+            image_block = "\n".join(f"![{result['title']}]({img})" for img in images)
+        if image_block:
+            section_parts.append(image_block)
+        section_text = "\n\n".join(part for part in section_parts if part).strip()
+        slot_sections_map[f"SLOT{idx}_SECTION"] = section_text or f"## {result['title']}\n\n内容が生成されませんでした。"
+        all_images.extend(result.get("relevant_pages", []))
 
-    final_article = f"""{overview_content}
+    for idx in range(1, 6):
+        slot_sections_map.setdefault(f"SLOT{idx}_SECTION", f"## Slot{idx}\n\n内容が生成されませんでした。")
 
-{chr(10).join(analysis_sections)}
+    article_template = prompt_loader.load_article_template()
+    overview_section = overview_content.strip() or "概要セクションの生成に失敗しました。"
+    investment_section = investment_content.strip() or "## 投資判断\n\n投資判断セクションの生成に失敗しました。"
 
-{investment_content}
+    unique_pages = sorted({p for p in all_images if isinstance(p, int)})
+    page_list_text = ", ".join(f"P{p:02d}" for p in unique_pages) if unique_pages else "ページ参照情報未収集"
+    data_notes = "主要数値は決算資料から抽出しています。重要項目は原資料と照合してください。"
 
----
+    replacements = {
+        "{{OVERVIEW_SECTION}}": overview_section,
+        "{{SLOT1_SECTION}}": slot_sections_map["SLOT1_SECTION"],
+        "{{SLOT2_SECTION}}": slot_sections_map["SLOT2_SECTION"],
+        "{{SLOT3_SECTION}}": slot_sections_map["SLOT3_SECTION"],
+        "{{SLOT4_SECTION}}": slot_sections_map["SLOT4_SECTION"],
+        "{{SLOT5_SECTION}}": slot_sections_map["SLOT5_SECTION"],
+        "{{INVESTMENT_SECTION}}": investment_section,
+        "{{PDF_FILENAME}}": pdf_path.name,
+        "{{PAGE_LIST}}": page_list_text,
+        "{{KPI_SUMMARY}}": metadata.get("kpi_summary") or "主要KPI情報が取得できていません",
+        "{{DATA_NOTES}}": data_notes,
+    }
 
-**▼新着記事をTwitterでお届けします**
-・Twitter: https://twitter.com/corp_analysis_lab
+    final_article = article_template
+    for placeholder, value in replacements.items():
+        final_article = final_article.replace(placeholder, value.strip())
 
-気に入ってくださった方は、noteから「スキ」「フォロー」をお願いします。
-"""
+    page_refs = re.findall(r"\(P\d{2,}\)", final_article)
+    table_matches = re.findall(r"\n\|[^\n]+\|\n\|[-:| ]+\|", final_article)
+    table_count = len(table_matches)
+    figure_count = final_article.count("![")
 
+    quality_checks = {
+        "character_count": len(final_article),
+        "within_target_characters": 8000 <= len(final_article) <= 10500,
+        "page_reference_count": len(page_refs),
+        "page_reference_requirement_met": len(page_refs) >= 30,
+        "table_count": table_count,
+        "table_requirement_met": table_count >= 6,
+        "figure_count": figure_count,
+        "figure_requirement_met": figure_count >= 3,
+    }
+    metadata["quality_checks"] = quality_checks
+    warning_flags = [
+        quality_checks["within_target_characters"],
+        quality_checks["page_reference_requirement_met"],
+        quality_checks["table_requirement_met"],
+        quality_checks["figure_requirement_met"],
+    ]
+    if not all(warning_flags):
+        print("警告: 品質ゲートを満たしていない項目があります。metadata['quality_checks'] を確認してください。")
     total_word_count = len(final_article.split())
     total_character_count = count_characters(final_article)
 
@@ -432,5 +480,11 @@ def run_enhanced_pipeline(pdf_path: Path, outdir: Path, ai_provider: str = "open
     (paths.logs / "run.json").write_text(json.dumps(runlog, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return result
+
+
+
+
+
+
 
 
